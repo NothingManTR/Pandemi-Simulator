@@ -1,0 +1,453 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Pandemi Simülatörü - Prototip</title>
+  <style>
+    :root{ --bg:#071023; --card:#0f1724; --accent:#10b981; --muted:#9ca3af; --danger:#ef4444; --warn:#f59e0b }
+    body{font-family:Inter,Segoe UI,Arial;margin:0;background:linear-gradient(180deg,#041023,var(--bg));color:#e6eef8}
+    .app{max-width:1400px;margin:18px auto;display:grid;grid-template-columns:360px 1fr 340px;gap:18px}
+    .panel{background:var(--card);padding:14px;border-radius:10px;box-shadow:0 6px 24px rgba(2,6,23,.6)}
+    h1{margin:0 0 8px 0;font-size:18px}
+    .stats{display:flex;flex-wrap:wrap;gap:8px}
+    .stat{background:rgba(255,255,255,0.02);padding:8px 10px;border-radius:8px;min-width:120px}
+    #mapWrap{position:relative;min-height:640px}
+    #map{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin-top:12px}
+    .region{background:#06121a;border:1px solid rgba(255,255,255,0.04);padding:8px;border-radius:8px;min-height:120px;cursor:pointer;position:relative}
+    .region h3{margin:0;font-size:13px;display:flex;align-items:center;gap:8px}
+    .bar{height:8px;background:#071422;border-radius:8px;margin-top:6px;overflow:hidden}
+    .bar > i{display:block;height:100%}
+    .healthy{background:linear-gradient(90deg,#34d399,#10b981)}
+    .infected{background:linear-gradient(90deg,#fb7185,#ef4444)}
+    .dead{background:linear-gradient(90deg,#94a3b8,#64748b)}
+    .controls{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap}
+    button{background:transparent;color:#e6eef8;border:1px solid rgba(255,255,255,0.06);padding:8px 10px;border-radius:8px;cursor:pointer}
+    button.primary{background:var(--accent);color:#042018;border:none}
+    .log{height:calc(100vh - 260px);overflow:auto;background:rgba(255,255,255,0.02);padding:8px;border-radius:8px;margin-top:10px}
+    .mini{font-size:12px;color:var(--muted)}
+    .resources{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap}
+    .resource{padding:8px 10px;border-radius:8px;background:rgba(255,255,255,0.02);min-width:120px}
+    .resource.critical{box-shadow:inset 0 0 0 2px rgba(239,68,68,0.12);border:1px solid rgba(239,68,68,0.25)}
+    .footer{grid-column:1/-1;margin-top:12px;color:var(--muted);font-size:13px}
+    /* overlay */
+    #overlay{position:absolute;left:0;top:0;right:0;bottom:0;pointer-events:none}
+    .unit-move{position:absolute;transform:translate(-50%,-50%);padding:6px 8px;border-radius:12px;background:rgba(17,24,39,0.98);color:#e6eef8;font-size:12px;display:flex;gap:6px;align-items:center;box-shadow:0 6px 18px rgba(2,6,23,.6);pointer-events:auto}
+    .path-line{stroke-width:2;stroke-linecap:round;opacity:0.8}
+
+    /* modals */
+    .overlay-modal{position:fixed;left:0;top:0;right:0;bottom:0;background:rgba(2,6,23,0.7);display:flex;align-items:center;justify-content:center;z-index:9999}
+    .modal{background:linear-gradient(180deg,#071026,#071a28);padding:22px;border-radius:12px;min-width:420px;box-shadow:0 12px 40px rgba(0,0,0,0.6);color:#e6eef8}
+    .modal h2{margin:0 0 8px 0}
+    .tabs{display:flex;gap:6px;margin-top:8px}
+    .tab{padding:6px 10px;border-radius:8px;background:rgba(255,255,255,0.02);cursor:pointer}
+    .win-lose{display:flex;flex-direction:column;gap:8px;align-items:center}
+
+    /* tech tree */
+    .tech-tree{display:flex;gap:12px;margin-top:10px}
+    .tech-column{display:flex;flex-direction:column;gap:8px}
+    .tech-node{padding:8px;border-radius:10px;background:rgba(255,255,255,0.02);min-width:160px}
+    .tech-node.locked{opacity:0.45}
+
+    .event-icon{font-size:28px;margin-right:10px}
+    .modal-row{display:flex;align-items:flex-start;gap:12px}
+
+    /* small */
+    @media (max-width:1100px){ .app{grid-template-columns:320px 1fr 300px} }
+    @media (max-width:900px){ .app{grid-template-columns:1fr} .log{height:200px} }
+  </style>
+</head>
+<body>
+
+<!-- INTRO / HOW-TO modal -->
+<div id="intro" class="overlay-modal">
+  <div class="modal">
+    <h2>Pandemi Simülatörü</h2>
+    <div class="mini">Proje prototipi — oynanış ayarları ve denge güncellendi.</div>
+    <div style="margin-top:12px">
+      <button id="startGame" class="primary">Yeni Oyun Başlat</button>
+      <button id="openHow">Nasıl Oynanır?</button>
+    </div>
+    <div style="margin-top:14px" class="mini">
+      Hazırlık evresi boyunca vaka yoktur. Pandemi başladığında vakalar otomatik yerleşir.
+    </div>
+    <hr style="margin:12px 0;border:none;border-top:1px solid rgba(255,255,255,0.03)" />
+    <div class="mini">Versiyon v0.9 — Daha hoş modal bildirimleri ve görsel Ar-Ge ağacı.</div>
+  </div>
+</div>
+
+<!-- HOW TO PLAY modal (hidden initially) -->
+<div id="howModal" class="overlay-modal" style="display:none">
+  <div class="modal">
+    <h2>Nasıl Oynanır</h2>
+    <div class="mini">
+      <ol>
+        <li>Sol paneldeki kaynakları ve bütçeyi takip edin. Kritik kaynaklar kırmızıyla işaretlenir.</li>
+        <li>Hazırlık evresinde altyapı ve Ar-Ge yatırımı yapın. Virüs yokken hazırlık en verimli dönemdir.</li>
+        <li>Pandemi başladığında vakalar ortaya çıkacak — hastane inşa edin, test/Ar-Ge yapın.</li>
+        <li>Sevk modu ile birlikleri gönderin; polis güveni sağlar, özel kuvvetler isyan bastırmada etkilidir.</li>
+        <li>Kaybetme koşulları: Çok fazla ölü bölgesi, güvenin çökmesi veya bütçe iflası. Kazanmak için enfeksiyonları kontrol altına alıp ülkeyi istikrara kavuşturun.</li>
+      </ol>
+    </div>
+    <div style="margin-top:12px"><button id="closeHow">Kapat</button></div>
+  </div>
+</div>
+
+<!-- GENERIC EVENT MODAL -->
+<div id="eventModal" class="overlay-modal" style="display:none">
+  <div class="modal" id="eventInner">
+    <!-- filled dynamically -->
+  </div>
+</div>
+
+<!-- SEND UNIT MODAL -->
+<div id="sendModal" class="overlay-modal" style="display:none">
+  <div class="modal">
+    <h2>Birlik Sevk Et</h2>
+    <div class="mini" id="sendInfo"></div>
+    <div style="margin-top:8px;display:flex;gap:8px;align-items:center">
+      <label class="mini">Tip:</label>
+      <select id="sendType"><option value="army">Ordu</option><option value="police">Polis</option><option value="spec">Özel</option></select>
+      <label class="mini">Adet:</label>
+      <input id="sendCount" type="number" value="1" min="1" style="width:80px;padding:6px;border-radius:6px;background:#071422;border:1px solid rgba(255,255,255,0.04);color:#e6eef8" />
+    </div>
+    <div style="margin-top:12px;display:flex;gap:8px;justify-content:flex-end">
+      <button id="sendCancel">İptal</button>
+      <button id="sendConfirm" class="primary">Sevk Et</button>
+    </div>
+  </div>
+</div>
+
+<div class="app">
+  <!-- LEFT -->
+  <div class="panel" id="left">
+    <h1>Pandemi Simülatörü</h1>
+    <div class="mini">v0.9 — Modals, görsel Ar-Ge ağacı ve denge ayarları.</div>
+
+    <div class="stats" style="margin-top:10px">
+      <div class="stat"><strong id="tick">Hafta: 0</strong><div class="mini">Zaman</div></div>
+      <div class="stat"><strong id="budget">Bütçe: 1000</strong><div class="mini">Para</div></div>
+      <div class="stat"><strong id="trust">Güven: 75%</strong><div class="mini">Halk güveni</div></div>
+      <div class="stat"><strong id="phase">Aşama: Hazırlık</strong><div class="mini">Hazırlık / Pandemi / Kilitlenme</div></div>
+    </div>
+
+    <div class="resources" id="resourceBox"></div>
+
+    <div class="actions">
+      <div class="controls" style="margin-top:12px">
+        <button id="startBtn" class="primary">Oynat</button>
+        <button id="pauseBtn">Durdur</button>
+        <button id="tickBtn">1 Hafta İlerle</button>
+      </div>
+
+      <div class="controls" style="margin-top:8px">
+        <label class="mini">Zaman Hızı:</label>
+        <button id="slowBtn">Yavaş (0.5x)</button>
+        <button id="normalBtn" class="primary">Normal (1x)</button>
+        <button id="fastBtn">Hızlı (2x)</button>
+      </div>
+
+      <div style="margin-top:10px">
+        <label class="mini">Seçili Bölge: <strong id="selected">-</strong></label>
+        <div style="display:flex;gap:8px;margin-top:6px;flex-wrap:wrap">
+          <button id="toggleQuarantine">Karantina Uygula (50)</button>
+          <button id="trainArmy">Asker Eğit (Ordu 100)</button>
+          <button id="trainPolice">Asker Eğit (Polis 80)</button>
+          <button id="trainSpec">Asker Eğit (Özel 200)</button>
+          <button id="sendMode">Sevk Modu: Kapalı</button>
+        </div>
+      </div>
+
+      <div id="buildingPanel" style="margin-top:8px">
+        <label class="mini">Binalar (seçili bölge)</label>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">
+          <button id="buildHospitalBtn">Hastane (200)</button>
+          <button id="buildSilo">Silo (120)</button>
+          <button id="buildCanning">Konserve (180)</button>
+          <button id="buildDrug">İlaç Tesisi (250)</button>
+          <button id="buildIndustry">Sanayi (300)</button>
+          <button id="buildVentFactory">Solunum Tesisi (350)</button>
+        </div>
+      </div>
+
+      <div id="abilityPanel" style="margin-top:8px;display:none">
+        <label class="mini">Bölge Aktif Yetkileri</label>
+        <div class="abilities">
+          <div class="ability" id="policeSpeech">Polis Konuşması (20 ₺)</div>
+          <div class="ability" id="specRaid">Özel Baskın (120 ₺)</div>
+          <div class="ability" id="armyFortify">Ordu Tahkimatı (90 ₺)</div>
+        </div>
+        <div class="mini">Not: yetkiler cooldown'a tabidir (3 hafta).</div>
+      </div>
+
+      <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">
+        <button id="saveBtn">Kaydet</button>
+        <button id="loadBtn">Yükle</button>
+        <button id="resetBtn">Sıfırla</button>
+      </div>
+
+      <div style="margin-top:12px">
+        <label class="mini">Ar-Ge / Teknoloji Ağacı</label>
+        <div id="techTree" class="tech-tree"></div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- CENTER MAP -->
+  <div class="panel" id="center">
+    <h1>Harita ve Bölgeler</h1>
+    <div class="mini">Bölgelere tıklayarak seçin. Bazı bölgelerde başlangıç binaları vardır.</div>
+    <div id="mapWrap">
+      <svg id="svgPaths" style="position:absolute;left:0;top:0;right:0;bottom:0;width:100%;height:100%;pointer-events:none"></svg>
+      <div id="map"></div>
+      <div id="overlay"></div>
+    </div>
+  </div>
+
+  <!-- RIGHT LOG with tabs -->
+  <div class="panel" id="right">
+    <h1>Olaylar ve Notlar</h1>
+    <div class="tabs">
+      <div class="tab" data-filter="all">Tümü</div>
+      <div class="tab" data-filter="event">Olaylar</div>
+      <div class="tab" data-filter="research">Ar-Ge</div>
+      <div class="tab" data-filter="economy">Ekonomi</div>
+      <div class="tab" data-filter="combat">Çatışma</div>
+    </div>
+    <div class="log" id="log"></div>
+  </div>
+
+  <div class="footer panel" style="grid-column:1/-1;display:flex;justify-content:space-between;align-items:center">
+    <div>
+      <strong>Bilgi</strong>: Hazırlık evresi boyunca vaka yoktur. Ar-Ge yatırımları hazırlıkta avantaj sağlar.
+    </div>
+    <div class="mini">v0.9 - Modals & Ar-Ge görsel ağacı eklendi. Dengeler güncellendi.</div>
+  </div>
+</div>
+
+<!-- WIN / LOSE modals -->
+<div id="endModal" class="overlay-modal" style="display:none">
+  <div class="modal win-lose" id="endInner">
+    <!-- filled dynamically -->
+  </div>
+</div>
+
+<script>
+// v0.9 - Modals updated (icon, summary), event queue so intro shows first, balance tweaks after quick tests
+const config = { ROWS:5, COLS:5, START_BUDGET:1400, HOSPITAL_COST:200, QUARANTINE_COST:60, BASE_R0:0.20, BASE_TICK_MS:4200 }
+let POLICE_TRUST_PER_UNIT = 0.17; let SPEC_SUPPRESSION_MULT = 2.2; let TRAVEL_TICK_FACTOR = 2.0; let TRAINING_COST_MULT = 0.95; let UPKEEP_MULT = 0.95;
+const UNIT_TYPES = { army: {name:'Ordu',train:110,upkeep:5,icon:'⚔️'}, police:{name:'Polis',train:85,upkeep:3,icon:'🛡️'}, spec:{name:'Özel',train:220,upkeep:8,icon:'🎯'} }
+function randName(){ const len = 3 + Math.floor(Math.random()*4); const letters = 'abcdefghijklmnopqrstuvwxyz'; let s=''; for(let i=0;i<len;i++) s += letters[Math.floor(Math.random()*letters.length)]; return s.charAt(0).toUpperCase()+s.slice(1); }
+class Region{ constructor(id){ this.id = id; this.name = randName(); this.population = Math.floor(600 + Math.random()*1200); this.infected = 0; this.dead = 0; this.hospital = 0; this.quarantine = false; this.production = Math.floor(20 + Math.random()*60); this.trust = 70 + Math.floor(Math.random()*20); this.units = {army:0, police:0, spec:0}; this.insurgents = 0; this.cooldowns = {policeSpeech:0, specRaid:0, armyFortify:0}; this.buildings = {silo:0,canning:0,drug:0,industry:0,ventFactory:0,hospital:0}; this.deception = false; this.deadZone = false; }}
+
+const game = { week:0, running:false, budget: config.START_BUDGET, trust:75, regions: [], movingUnits: [], sendMode:false, speed:1, research:null, techs:[], resources: {food:2000, medRaw:400, medSupply:200, energy:1100, industry:500}, phase:'prep', phaseWeek:0, phaseDurations:{prep:8,pandemic:40,lockdown:20}, winStreak:0 }
+
+function initTechs(){ game.techs = [
+  {id:'ct',name:'İzleme',cost:220,weeks:3,desc:'Bulaşma azalt (-0.05 R0)',applied:false,progress:0,prereq:[],effect:()=>{config.BASE_R0 = Math.max(0.05, config.BASE_R0 - 0.05); showEventModal('research','🔬','İzleme tamamlandı','R0 değeri düştü — bulaşma azaldı.');}},
+  {id:'test',name:'Hızlı Test',cost:200,weeks:2,desc:'İyileşme hızlanır',applied:false,progress:0,prereq:[],effect:()=>{ game._testing = true; showEventModal('research','🧪','Hızlı test aktif','Testler enfeksiyon tespitini hızlandırıyor.');}},
+  {id:'vent',name:'Ventilatörler',cost:320,weeks:4,desc:'Ölümleri azalt (önkoşul: Hızlı Test)',applied:false,progress:0,prereq:['test'],effect:()=>{ game._ventEffective = true; showEventModal('research','⚙️','Ventilatör programı tamamlandı','Ölüm oranı azaldı.');}},
+  {id:'poltrain',name:'Polis Geliştirme',cost:180,weeks:3,desc:'Polis güven etkisi artar',applied:false,progress:0,prereq:[],effect:()=>{ POLICE_TRUST_PER_UNIT += 0.12; showEventModal('research','👮','Polis eğitimleri tamamlandı','Polislerin halk güvenine etkisi arttı.');}},
+  {id:'spectrain',name:'Özel Kuvvet Geliştirme',cost:260,weeks:4,desc:'Özel kuvvet baskılama artar (önkoşul: Polis Geliştirme)',applied:false,progress:0,prereq:['poltrain'],effect:()=>{ SPEC_SUPPRESSION_MULT += 1.2; showEventModal('research','🎯','Özel kuvvet geliştirme tamamlandı','Özel kuvvetlerin isyan bastırma gücü arttı.');}},
+  {id:'logi',name:'Lojistik',cost:200,weeks:3,desc:'Sevk süreleri azalır',applied:false,progress:0,prereq:[],effect:()=>{ TRAVEL_TICK_FACTOR = Math.max(1.0, TRAVEL_TICK_FACTOR - 0.5); showEventModal('research','🚚','Lojistik iyileştirildi','Sevk süreleri kısaldı.');}},
+  {id:'trainproc',name:'Eğitim Verimliliği',cost:200,weeks:3,desc:'Eğitim maliyeti düşer',applied:false,progress:0,prereq:[],effect:()=>{ TRAINING_COST_MULT = Math.max(0.6, TRAINING_COST_MULT - 0.2); showEventModal('research','📚','Eğitim verimliliği geliştirildi','Eğitim maliyetleri düştü.');}},
+  {id:'supply',name:'Tedarik',cost:260,weeks:4,desc:'Bakım maliyeti düşer',applied:false,progress:0,prereq:[],effect:()=>{ UPKEEP_MULT = Math.max(0.6, UPKEEP_MULT - 0.25); showEventModal('research','🔗','Tedarik zinciri güçlendirildi','Birim bakım maliyetleri azaldı.');}}
+]; }
+
+for(let r=0;r<config.ROWS*config.COLS;r++) game.regions.push(new Region(r+1)); initTechs();
+// assign some starting buildings to balance gameplay: distribute a few factories and silos and hospitals
+(function seedBuildings(){ const regionCount = game.regions.length; const types = ['silo','canning','drug','industry','ventFactory','hospital']; const totalToPlace = 10; for(let i=0;i<totalToPlace;i++){ const t = types[Math.floor(Math.random()*types.length)]; const idx = Math.floor(Math.random()*regionCount); game.regions[idx].buildings[t] +=1; if(t==='hospital') game.regions[idx].hospital +=1; }})();
+
+const mapEl = document.getElementById('map'); const overlayEl = document.getElementById('overlay'); const svgEl = document.getElementById('svgPaths'); let selectedRegion = null; let tickTimer = null;
+
+// event queue so intro blocks immediate modals
+let eventQueue = []; function queueOrShowEvent(cat,icon,title,text){ const payload = {cat,icon,title,text}; const introVisible = document.getElementById('intro').style.display !== 'none'; if(introVisible){ eventQueue.push(payload); } else { showEventModalImmediate(payload); } }
+function flushEventQueue(){ if(eventQueue.length===0) return; // show sequentially
+  let delay = 250; eventQueue.forEach(p=>{ setTimeout(()=> showEventModalImmediate(p), delay); delay += 600; }); eventQueue = []; }
+
+// UI rendering
+function renderResources(){ const box = document.getElementById('resourceBox'); box.innerHTML=''; const critThreshold = {food:400,medSupply:40,energy:200,medRaw:60,industry:120}; Object.keys(game.resources).forEach(k=>{ const val = Math.floor(game.resources[k]); const div = document.createElement('div'); div.className='resource' + (val <= critThreshold[k]? ' critical':''); div.innerHTML = `<strong>${k.toUpperCase()}</strong><div class="mini">${val}</div>`; box.appendChild(div); }); // highlight info area if any critical
+  const critical = Object.keys(game.resources).find(k=>game.resources[k] <= critThreshold[k]); const infoEl = document.querySelector('.footer strong'); if(critical){ infoEl.style.color='var(--danger)'; infoEl.innerText = `Dikkat: Kritik kaynak - ${critical.toUpperCase()}`; } else { infoEl.style.color='inherit'; infoEl.innerText = 'Bilgi'; } }
+
+function renderMap(){ mapEl.innerHTML=''; for(let r=0;r<config.ROWS;r++){ for(let c=0;c<config.COLS;c++){ const idx = r*config.COLS + c; const reg = game.regions[idx]; const el = document.createElement('div'); el.className='region' + (reg.quarantine? ' quarantine':'') + (reg.deadZone? ' deadzone':''); el.dataset.id=reg.id; const healthy = Math.max(0, reg.population - reg.infected - reg.dead); const unitSummary = [];
+      if(reg.buildings.silo) unitSummary.push('🛢️'+reg.buildings.silo);
+      if(reg.buildings.canning) unitSummary.push('🏭'+reg.buildings.canning);
+      if(reg.buildings.drug) unitSummary.push('🧪'+reg.buildings.drug);
+      if(reg.buildings.industry) unitSummary.push('🏗️'+reg.buildings.industry);
+      if(reg.buildings.ventFactory) unitSummary.push('⚙️'+reg.buildings.ventFactory);
+      if(reg.buildings.hospital) unitSummary.push('🏥'+reg.buildings.hospital);
+      if(reg.units.army) unitSummary.push(UNIT_TYPES.army.icon + '×'+reg.units.army);
+      if(reg.units.police) unitSummary.push(UNIT_TYPES.police.icon + '×'+reg.units.police);
+      if(reg.units.spec) unitSummary.push(UNIT_TYPES.spec.icon + '×'+reg.units.spec);
+      el.innerHTML = `
+        <h3> ${reg.name} <span class="mini">${reg.population} pop</span></h3>
+        <div class="mini"> <strong>${reg.buildings.hospital>0?('🏥 Lv'+reg.buildings.hospital):'🏥 Yok'}</strong> <span style="margin-left:6px">${unitSummary.join(' ') || '—'}</span></div>
+        <div class="bar"><i class="healthy" style="width:${(healthy/reg.population)*100}%"></i></div>
+        <div class="bar"><i class="infected" style="width:${(reg.infected/reg.population)*100}%"></i></div>
+        <div class="bar"><i class="dead" style="width:${(reg.dead/reg.population)*100}%"></i></div>
+        <div style="margin-top:6px" class="mini">Güven: ${Math.max(0,Math.round(reg.trust))}% ${reg.quarantine?'<strong>(Karantina)</strong>':''}</div>
+        <div class="mini">Üretim: ${reg.production} | İsyan: ${reg.insurgents>0? ('🚩 '+reg.insurgents):'—'}</div>
+      `;
+      const movingHere = game.movingUnits.filter(m=>m.to===idx).length; if(movingHere>0){ const mv = document.createElement('div'); mv.className='moving'; mv.innerText = `${movingHere} hareket`; el.appendChild(mv); }
+      el.addEventListener('click',()=>onRegionClick(idx)); mapEl.appendChild(el);
+    }} positionOverlay(); renderResources(); updateHUD(); renderAbilities(); renderTechTree(); renderTechList(); }
+
+function positionOverlay(){ const wrap = document.getElementById('mapWrap'); const rect = wrap.getBoundingClientRect(); overlayEl.style.width = rect.width+'px'; overlayEl.style.height = rect.height+'px'; overlayEl.style.left = '0px'; overlayEl.style.top = '0px'; svgEl.setAttribute('width', rect.width); svgEl.setAttribute('height', rect.height); svgEl.style.left='0px'; svgEl.style.top='0px'; }
+window.addEventListener('resize', ()=>{ positionOverlay(); })
+
+function updateHUD(){ document.getElementById('tick').innerText = 'Hafta: ' + game.week; document.getElementById('budget').innerText = 'Bütçe: ' + Math.floor(game.budget); document.getElementById('trust').innerText = 'Güven: ' + Math.max(0,Math.min(100,Math.round(game.trust))) + '%'; document.getElementById('phase').innerText = 'Aşama: ' + (game.phase==='prep'? 'Hazırlık' : game.phase==='pandemic'? 'Pandemi' : 'Kilitlenme'); document.getElementById('selected').innerText = selectedRegion!=null? (game.regions[selectedRegion].name): '-'; }
+
+// show event modal immediate
+function showEventModalImmediate(payload){ const modal = document.getElementById('eventModal'); const inner = document.getElementById('eventInner'); inner.innerHTML = `<div class='modal-row'><div class='event-icon'>${payload.icon || 'ℹ️'}</div><div><h2>${payload.title}</h2><div class='mini'>${payload.text}</div></div></div><div style='margin-top:12px;display:flex;justify-content:flex-end'><button id='evtClose'>Kapat</button></div>`; modal.style.display='flex'; document.getElementById('evtClose').onclick = ()=>{ modal.style.display='none'; }; }
+
+function showEventModal(cat,icon,title,text){ queueOrShowEvent(cat,icon,title,text); }
+
+// send modal flow
+let _sendFrom = null; let _sendTo = null;
+function openSendModal(fromIdx,toIdx){ _sendFrom = fromIdx; _sendTo = toIdx; const from = game.regions[fromIdx]; const to = game.regions[toIdx]; document.getElementById('sendInfo').innerText = `${from.name} → ${to.name}`; document.getElementById('sendType').value = 'army'; document.getElementById('sendCount').value = 1; document.getElementById('sendModal').style.display = 'flex'; }
+function closeSendModal(){ document.getElementById('sendModal').style.display = 'none'; _sendFrom = null; _sendTo = null; }
+function confirmSend(){ const type = document.getElementById('sendType').value; const num = parseInt(document.getElementById('sendCount').value) || 0; const from = game.regions[_sendFrom]; if(num<=0) return alert('Geçersiz sayı'); if(from.units[type] < num) return alert('Yeterli birlik yok'); const dist = distanceBetween(_sendFrom,_sendTo); const travelTicks = Math.max(1, Math.ceil(dist * TRAVEL_TICK_FACTOR)); from.units[type] -= num; const mv = {from:_sendFrom,to:_sendTo,count:num,ticks:travelTicks,type:type}; game.movingUnits.push(mv); logCat('event',`${game.regions[_sendFrom].name} -> ${game.regions[_sendTo].name} yönüne ${num} ${UNIT_TYPES[type].name} sevk edildi (süre: ${travelTicks} hafta)`); animatePath(mv); closeSendModal(); game.sendMode = false; document.getElementById('sendMode').innerText = 'Sevk Modu: Kapalı'; renderMap(); }
+
+document.getElementById('sendCancel').addEventListener('click',closeSendModal); document.getElementById('sendConfirm').addEventListener('click',confirmSend);
+
+function onRegionClick(idx){ if(game.sendMode && selectedRegion!=null && selectedRegion!==idx){ const fromIdx = selectedRegion; const toIdx = idx; const from = game.regions[fromIdx]; const available = (from.units.army + from.units.police + from.units.spec); if(available <= 0) { alert('Sevk edilecek birliğiniz yok.'); return; } openSendModal(fromIdx,toIdx); return; } selectedRegion = idx; logCat('event','Seçili: ' + game.regions[idx].name); renderMap(); }
+
+function animatePath(mv){ try{ const fromEl = mapEl.children[mv.from]; const toEl = mapEl.children[mv.to]; if(!fromEl || !toEl) return; const wrapRect = document.getElementById('mapWrap').getBoundingClientRect(); const fromRect = fromEl.getBoundingClientRect(); const toRect = toEl.getBoundingClientRect(); const startX = fromRect.left + fromRect.width/2 - wrapRect.left; const startY = fromRect.top + fromRect.height/2 - wrapRect.top; const endX = toRect.left + toRect.width/2 - wrapRect.left; const endY = toRect.top + toRect.height/2 - wrapRect.top; const line = document.createElementNS('http://www.w3.org/2000/svg','line'); line.setAttribute('x1',startX); line.setAttribute('y1',startY); line.setAttribute('x2',endX); line.setAttribute('y2',endY); line.setAttribute('class','path-line'); line.setAttribute('stroke', mv.type==='army'? '#93c5fd' : mv.type==='police'? '#86efac' : '#fda4af'); svgEl.appendChild(line);
+    const el = document.createElement('div'); el.className='unit-move'; el.innerHTML = `<span class="icon">${UNIT_TYPES[mv.type].icon}</span><strong>${mv.count}</strong>`; overlayEl.appendChild(el);
+    const travelMs = Math.max(600, Math.floor((mv.ticks * config.BASE_TICK_MS) / game.speed)); el.style.left = startX + 'px'; el.style.top = startY + 'px'; const start = performance.now(); function step(now){ const t = Math.min(1, (now - start)/travelMs); const x = startX + (endX-startX)*t; const y = startY + (endY-startY)*t; el.style.left = x+'px'; el.style.top = y+'px'; if(t<1) requestAnimationFrame(step); else { setTimeout(()=>{ el.remove(); line.remove(); }, 120); } } requestAnimationFrame(step);
+  }catch(e){ console.warn('Animasyon hatası',e); } }
+
+// logging with categories and tabs
+function logCat(cat,text){ const logEl = document.getElementById('log'); const p = document.createElement('div'); p.dataset.cat = cat; p.innerHTML = `<strong class=mini>[${cat.toUpperCase()}]</strong> ${text}`; logEl.prepend(p); // also show modal for important events
+  if(cat==='event' || cat==='combat'){ showEventModal(cat,'⚠️', 'Olay', text); } }
+
+// filters
+const tabs = document.querySelectorAll('.tabs .tab'); tabs.forEach(t=>t.addEventListener('click',()=>{ const f = t.dataset.filter; filterLog(f); })); function filterLog(filter){ const items = document.querySelectorAll('#log > div'); items.forEach(it=>{ it.style.display = (filter==='all' || it.dataset.cat===filter)? 'block':'none'; }); }
+
+// actions
+function buildStructure(type){ if(selectedRegion==null) return alert('Önce bir bölge seçin'); const costs = {hospital:200,silo:120,canning:180,drug:250,industry:300,ventFactory:350}; const r = game.regions[selectedRegion]; if(game.budget < costs[type]) return alert('Yetersiz bütçe'); game.budget -= costs[type]; r.buildings[type] +=1; if(type==='hospital') r.hospital +=1; logCat('economy',`${r.name} bölgesine ${type} inşa edildi`); renderMap(); }
+
+document.getElementById('buildHospitalBtn').addEventListener('click',()=>buildStructure('hospital'));
+document.getElementById('buildSilo').addEventListener('click',()=>buildStructure('silo'));
+document.getElementById('buildCanning').addEventListener('click',()=>buildStructure('canning'));
+document.getElementById('buildDrug').addEventListener('click',()=>buildStructure('drug'));
+document.getElementById('buildIndustry').addEventListener('click',()=>buildStructure('industry'));
+document.getElementById('buildVentFactory').addEventListener('click',()=>buildStructure('ventFactory'));
+
+function trainUnitType(type){ if(selectedRegion==null) return alert('Önce bir bölge seçin'); const cfg = UNIT_TYPES[type]; const cost = Math.ceil(cfg.train * TRAINING_COST_MULT); if(game.budget < cost) return alert('Yetersiz bütçe'); game.budget -= cost; game.regions[selectedRegion].units[type] += 1; logCat('event',`${game.regions[selectedRegion].name} bölgesine 1 ${cfg.name} eğitildi (maliyet: ${cost})`); renderMap(); }
+
+document.getElementById('trainArmy').addEventListener('click',()=>trainUnitType('army'));
+document.getElementById('trainPolice').addEventListener('click',()=>trainUnitType('police'));
+document.getElementById('trainSpec').addEventListener('click',()=>trainUnitType('spec'));
+
+document.getElementById('sendMode').addEventListener('click',()=>{ game.sendMode = !game.sendMode; document.getElementById('sendMode').innerText = 'Sevk Modu: ' + (game.sendMode? 'Açık':'Kapalı'); })
+
+// abilities
+function renderAbilities(){ const panel = document.getElementById('abilityPanel'); if(selectedRegion==null){ panel.style.display='none'; return; } panel.style.display='block'; const r = game.regions[selectedRegion]; document.getElementById('policeSpeech').innerText = `Polis Konuşması (20 ₺) ${r.cooldowns.policeSpeech>0? ' — CD:'+r.cooldowns.policeSpeech+'w':''}`; document.getElementById('specRaid').innerText = `Özel Baskın (120 ₺) ${r.cooldowns.specRaid>0? ' — CD:'+r.cooldowns.specRaid+'w':''}`; document.getElementById('armyFortify').innerText = `Ordu Tahkimatı (90 ₺) ${r.cooldowns.armyFortify>0? ' — CD:'+r.cooldowns.armyFortify+'w':''}`; }
+
+function canUseAbility(r,ability,cost){ if(r.cooldowns[ability] > 0) return 'Cooldown'; if(game.budget < cost) return 'Para yok'; return true; }
+function usePoliceSpeech(){ if(selectedRegion==null) return; const r = game.regions[selectedRegion]; const cost=20; const ok = canUseAbility(r,'policeSpeech',cost); if(ok!==true) return alert(ok); game.budget -= cost; const police = r.units.police; const gain = 3 + Math.floor(police * (POLICE_TRUST_PER_UNIT*1.6)); r.trust = Math.min(100, r.trust + gain); r.cooldowns.policeSpeech = 3; logCat('event',`${r.name} için Polis Konuşması yapıldı: Güven +${gain}`); renderMap(); }
+document.getElementById('policeSpeech').addEventListener('click',usePoliceSpeech);
+
+function useSpecRaid(){ if(selectedRegion==null) return; const r = game.regions[selectedRegion]; const cost=120; const ok = canUseAbility(r,'specRaid',cost); if(ok!==true) return alert(ok); if(r.units.spec <=0) return alert('Bölgede özel kuvvet yok'); game.budget -= cost; const power = r.units.spec * SPEC_SUPPRESSION_MULT; const removed = Math.min(r.insurgents, Math.round(power + 5)); r.insurgents = Math.max(0, r.insurgents - removed); r.cooldowns.specRaid = 3; logCat('combat',`${r.name} için Özel Baskın yapıldı: ${removed} isyancı etkisiz oldu`) ; renderMap(); }
+document.getElementById('specRaid').addEventListener('click',useSpecRaid);
+
+function useArmyFortify(){ if(selectedRegion==null) return; const r = game.regions[selectedRegion]; const cost=90; const ok = canUseAbility(r,'armyFortify',cost); if(ok!==true) return alert(ok); if(r.units.army <=0) return alert('Bölgede ordu yok'); game.budget -= cost; r.trust = Math.min(100, r.trust + 6 + Math.floor(r.units.army * 0.25)); r.cooldowns.armyFortify = 3; logCat('event',`${r.name} tahkimat yapıldı: güven + ve isyan riski azaldı`); renderMap(); }
+document.getElementById('armyFortify').addEventListener('click',useArmyFortify);
+
+// save/load/reset
+function saveGame(){ try{ const s = JSON.stringify(game); localStorage.setItem('pandemic_save', s); logCat('event','Oyun kaydedildi'); }catch(e){ alert('Kaydetme başarısız'); }}
+function loadGame(){ try{ const s = localStorage.getItem('pandemic_save'); if(!s) return alert('Kayıt bulunamadı'); const obj = JSON.parse(s); // rehydrate structure
+    game.week = obj.week; game.running = false; game.budget = obj.budget; game.trust = obj.trust; game.regions = obj.regions.map(r=>{ const nr = new Region(r.id); Object.assign(nr,r); return nr; }); game.movingUnits = obj.movingUnits || []; game.sendMode = obj.sendMode; game.resources = obj.resources; game.phase = obj.phase; game.phaseWeek = obj.phaseWeek; initTechs(); if(obj.techs){ game.techs.forEach(t=>{ const ot = obj.techs.find(x=>x.id===t.id); if(ot){ t.applied = ot.applied; t.progress = ot.progress || 0; if(t.applied && typeof t.effect === 'function') t.effect(); } }) } logCat('event','Kayıt yüklendi'); renderMap(); }catch(e){ alert('Yükleme başarısız') }}
+function resetGame(){ if(!confirm('Gerçekten sıfırlansın mı?')) return; location.reload(); }
+
+document.getElementById('saveBtn').addEventListener('click',saveGame); document.getElementById('loadBtn').addEventListener('click',loadGame); document.getElementById('resetBtn').addEventListener('click',resetGame);
+
+// time controls
+function setSpeed(s){ game.speed = s; if(game.running){ clearInterval(tickTimer); tickTimer = setInterval(tick, Math.max(1000, Math.floor(config.BASE_TICK_MS / game.speed))); } }
+document.getElementById('slowBtn').addEventListener('click',()=>setSpeed(0.5)); document.getElementById('normalBtn').addEventListener('click',()=>setSpeed(1)); document.getElementById('fastBtn').addEventListener('click',()=>setSpeed(2));
+
+actionBindings(); function actionBindings(){ document.getElementById('startBtn').addEventListener('click', ()=>{ if(!game.running) start(); else pause(); }); document.getElementById('pauseBtn').addEventListener('click', pause); document.getElementById('tickBtn').addEventListener('click', ()=>{ tick(); }); document.getElementById('sendMode').addEventListener('click',()=>{ game.sendMode = !game.sendMode; document.getElementById('sendMode').innerText = 'Sevk Modu: ' + (game.sendMode? 'Açık':'Kapalı'); }); document.getElementById('startGame').addEventListener('click',()=>{ document.getElementById('intro').style.display='none'; flushEventQueue(); }); document.getElementById('openHow').addEventListener('click',()=>{ document.getElementById('howModal').style.display='flex'; }); document.getElementById('closeHow').addEventListener('click',()=>{ document.getElementById('howModal').style.display='none'; }); }
+
+// Tech UI (visual tree + list fallback)
+function renderTechTree(){ const container = document.getElementById('techTree'); container.innerHTML=''; // simple 3-column layout: early / mid / late
+  const cols = {early:document.createElement('div'), mid:document.createElement('div'), late:document.createElement('div')}; Object.values(cols).forEach(c=>{ c.className='tech-column'; container.appendChild(c); });
+  game.techs.forEach(t=>{ const node = document.createElement('div'); const locked = t.prereq && t.prereq.some(p=>{ const pt = game.techs.find(x=>x.id===p); return !pt || !pt.applied; }); node.className = 'tech-node' + (locked? ' locked':''); node.innerHTML = `<strong>${t.name}</strong><div class='mini'>${t.desc}</div>`; const btn = document.createElement('button'); btn.style.marginTop='8px'; btn.innerText = t.applied? 'Tamamlandı' : (locked? 'Kilitli' : 'Araştır'); btn.disabled = t.applied || locked; if(!t.applied && !locked){ btn.addEventListener('click',()=>startResearch(t.id)); } node.appendChild(btn);
+    // place by simple heuristic
+    if(t.prereq && t.prereq.length>0) cols.mid.appendChild(node); else if(t.id==='vent') cols.late.appendChild(node); else cols.early.appendChild(node);
+  }); }
+
+function renderTechList(){ /* fallback - unused */ }
+
+function startResearch(id){ const t = game.techs.find(x=>x.id===id); if(!t) return; if(t.applied) return alert('Zaten tamamlandı'); if(game.research) return alert('Zaten bir araştırma devam ediyor'); if(game.budget < t.cost) return alert('Yetersiz bütçe'); game.budget -= t.cost; game.research = {techId:id, remaining:t.weeks}; logCat('research',`${t.name} araştırması başlatıldı (${t.weeks} hafta)`); renderTechTree(); }
+function finishResearch(id){ const t = game.techs.find(x=>x.id===id); if(!t) return; t.applied = true; t.progress = t.weeks; if(typeof t.effect === 'function') t.effect(); logCat('research',t.name + ' araştırması tamamlandı!'); renderTechTree(); }
+
+// Game phases
+function advancePhaseIfNeeded(){ game.phaseWeek +=1; if(game.phase==='prep' && game.phaseWeek >= game.phaseDurations.prep){ game.phase='pandemic'; game.phaseWeek=0; logCat('event','Pandemi başladı — bölgelere ilk vakalar yerleşiyor'); seedInitialPandemic(); }
+  else if(game.phase==='pandemic' && game.phaseWeek >= game.phaseDurations.pandemic){ game.phase='lockdown'; game.phaseWeek=0; logCat('event','Kilitlenme başladı — ithalat durdu!'); }
+}
+
+function seedInitialPandemic(){ const count = 4 + Math.floor(Math.random()*4); for(let i=0;i<count;i++){ const idx = Math.floor(Math.random()*game.regions.length); const r = game.regions[idx]; const seed = Math.max(5, Math.floor(r.population * (0.01 + Math.random()*0.02))); r.infected += seed; queueOrShowEvent('event','🦠',`${r.name} ilk vakalar`,`${seed} vaka tespit edildi`); } renderMap(); }
+
+// ventilator dilemma using modal with nicer UI
+function triggerVentilatorDilemma(){ let totalHospCapacity=0, demand=0; game.regions.forEach(r=>{ totalHospCapacity += r.buildings.hospital * 50; demand += r.infected*0.12; }); if(demand <= totalHospCapacity) return; const payload = {cat:'event', icon:'⚠️', title:'Ventilatör Kıtlığı', text:'Hastaneler yetersiz. Bir tercih yapın:'}; queueOrShowEvent('event','⚠️','Ventilatör Kıtlığı','Hastaneler yetersiz.'); // show modal directly with options
+  const modal = document.getElementById('eventModal'); const inner = document.getElementById('eventInner'); inner.innerHTML = `<div class='modal-row'><div class='event-icon'>⚠️</div><div><h2>Ventilatör Kıtlığı</h2><div class='mini'>Hastaneler yetersiz. Hangi grubu önceliklendireceksiniz?</div></div></div>
+    <div style='margin-top:12px;display:flex;gap:8px;justify-content:space-between'>
+      <button id='ventOpt1'>Sağlık çalışanları öncelikli</button>
+      <button id='ventOpt2'>Genç nüfus</button>
+      <button id='ventOpt3'>Kura</button>
+    </div>`; modal.style.display='flex'; document.getElementById('ventOpt1').onclick = ()=>{ game.trust -=4; game.regions.forEach(r=>{ r.dead = Math.max(0, r.dead - Math.floor(r.infected*0.006)); }); logCat('event','Seçim: Sağlık çalışanları öncelikli → Güven -4'); modal.style.display='none'; };
+  document.getElementById('ventOpt2').onclick = ()=>{ game.trust -=7; game.regions.forEach(r=>{ r.dead += Math.floor(r.infected*0.01); }); logCat('event','Seçim: Genç öncelikli → Güven -7, bazı ölümler arttı'); modal.style.display='none'; };
+  document.getElementById('ventOpt3').onclick = ()=>{ logCat('event','Seçim: Kura uygulandı — tarafsız karar'); modal.style.display='none'; };
+}
+
+// Black market spawn
+function maybeSpawnBlackMarket(){ game.regions.forEach(r=>{ if(!r.deadZone && game.resources.food < (r.population*0.2) && r.trust < 40 && Math.random() < 0.12){ r.deception = true; logCat('event',`${r.name} bölgesinde kara borsa ortaya çıktı!`); } }); }
+
+// win/lose conditions
+function checkEndConditions(){ const deadZones = game.regions.filter(r=>r.deadZone).length; if(deadZones >= 3){ showEnd('lose','Çok sayıda Ölü Bölge — oyun kaybedildi'); return true; } if(game.trust <= 5){ showEnd('lose','Güven çökmesi — oyun kaybedildi'); return true; } if(game.budget < -1400){ showEnd('lose','Bütçe iflası — oyun kaybedildi'); return true; } const totalInfected = game.regions.reduce((s,r)=>s+r.infected,0); if(game.phase==='pandemic' && totalInfected===0){ game.winStreak +=1; if(game.winStreak >= 8){ showEnd('win','Enfeksiyonlar kontrol altına alındı — oyun kazanıldı'); return true; } } else { game.winStreak = 0; } return false; }
+
+function showEnd(type,msg){ const modal = document.getElementById('endModal'); const inner = document.getElementById('endInner'); inner.innerHTML = ''; if(type==='win'){ inner.innerHTML = `<h2>KAZANDINIZ</h2><div class="mini">${msg}</div><div style="margin-top:8px"><button onclick="location.reload()">Yeni Oyun</button></div>`; } else { inner.innerHTML = `<h2>OYUN BİTTİ</h2><div class="mini">${msg}</div><div style="margin-top:8px"><button onclick="location.reload()">Yeniden Deneyin</button></div>`; } modal.style.display='flex'; pause(); }
+
+// tick logic (balanced adjustments from quick tuning)
+function tick(){ game.week +=1; advancePhaseIfNeeded(); if(game.research){ game.research.remaining -=1; const t = game.techs.find(x=>x.id===game.research.techId); if(t && game.research.remaining<=0){ finishResearch(game.research.techId); game.research = null; } }
+  game.regions.forEach(r=>{ ['policeSpeech','specRaid','armyFortify'].forEach(k=>{ if(r.cooldowns[k]>0) r.cooldowns[k] -=1; }); });
+  let producedFood=0, producedIndustry=0, producedMedRaw=0, producedEnergy=0;
+  game.regions.forEach(r=>{ if(r.deadZone) return; producedIndustry += r.production * 0.30; producedFood += r.buildings.silo * 18 + r.buildings.canning * 45; producedMedRaw += r.buildings.drug * 22; producedIndustry += r.buildings.industry * 85; producedEnergy += Math.floor(r.production * 0.10); });
+  game.resources.food += producedFood; game.resources.industry += producedIndustry; game.resources.medRaw += producedMedRaw; game.resources.energy += producedEnergy;
+  let ventFactories = game.regions.reduce((s,r)=>s + r.buildings.ventFactory,0);
+  if(ventFactories>0){ const produced = ventFactories * 8; const useRaw = Math.min(game.resources.medRaw, produced*2); game.resources.medRaw -= useRaw; game.resources.medSupply += Math.floor(useRaw/2); }
+  let totalConsumptionFood=0, totalEnergyCons=0; game.regions.forEach(r=>{ if(r.deadZone) return; totalConsumptionFood += Math.ceil(r.population * 0.012); totalEnergyCons += Math.ceil(r.population * 0.0065); });
+  let medNeeded = game.regions.reduce((s,r)=>s + Math.ceil(r.buildings.hospital * 5 + r.infected*0.012),0);
+  function importIfNeeded(resourceName, required){ if(game.phase !== 'lockdown'){ const current = game.resources[resourceName]; if(current < required){ const deficit = required - current; const importCost = Math.ceil(deficit * 1.0); if(game.budget >= importCost){ game.budget -= importCost; game.resources[resourceName] += deficit; logCat('economy',`İthalat yapıldı: ${resourceName} +${deficit} (maliyet ${importCost})`); } else { const affordable = Math.floor(game.budget / 1.0); game.budget -= affordable * 1.0; game.resources[resourceName] += affordable; logCat('economy',`Kısmi ithalat: ${resourceName} +${affordable}`); } } } }
+  importIfNeeded('food', totalConsumptionFood); importIfNeeded('energy', totalEnergyCons); importIfNeeded('medSupply', medNeeded);
+  game.resources.food = Math.max(0, game.resources.food - totalConsumptionFood); game.resources.energy = Math.max(0, game.resources.energy - totalEnergyCons);
+  const medUsed = Math.min(game.resources.medSupply, medNeeded); game.resources.medSupply -= medUsed;
+  if(game.resources.food < 350){ game.trust -= 0.5; logCat('economy','Gıda kıtlığı: Güven azaldı'); }
+  if(game.resources.medSupply < 35){ game.trust -= 0.4; logCat('economy','Tıbbi malzeme eksikliği: Güven azaldı'); }
+  let upkeep = 0; game.regions.forEach(r=>{ upkeep += (r.units.army * UNIT_TYPES.army.upkeep) + (r.units.police * UNIT_TYPES.police.upkeep) + (r.units.spec * UNIT_TYPES.spec.upkeep); }); upkeep = Math.ceil(upkeep * UPKEEP_MULT); game.budget -= upkeep; if(upkeep>0) logCat('economy',`Birim bakımı ödendi: -${upkeep}`);
+  for(let i=game.movingUnits.length-1;i>=0;i--){ const m = game.movingUnits[i]; m.ticks -=1; if(m.ticks <=0){ const dest = game.regions[m.to]; dest.units[m.type] += m.count; logCat('event',`${m.count} ${UNIT_TYPES[m.type].name} ${game.regions[m.from].name} -> ${dest.name} ulaştı`); if(dest.insurgents > 0){ const suppressionStrength = (dest.units.army*1.0) + (dest.units.police*0.6) + (dest.units.spec*SPEC_SUPPRESSION_MULT); const fight = Math.min(dest.insurgents, Math.ceil(suppressionStrength * 0.6)); dest.insurgents = Math.max(0, dest.insurgents - fight); logCat('combat',`${dest.name} bölgesinde çatışma: ${fight} isyancı etkisiz oldu`); } game.movingUnits.splice(i,1); } }
+  const newInfections = []; game.regions.forEach((r,idx)=>{ if(r.deadZone){ newInfections.push(0); return; } const neighbors = getNeighbors(idx); let neighborInfected = neighbors.reduce((s,i)=>s + game.regions[i].infected,0); const baseSpread = config.BASE_R0 * r.infected; const neighborSpread = 0.00055 * neighborInfected; const quarantineFactor = r.quarantine? 0.12 : 1.0; const hospitalFactor = 1 - Math.min(0.65,0.12 * r.buildings.hospital); const susceptible = Math.max(0, r.population - r.infected - r.dead); let add = Math.floor((baseSpread + neighborSpread) * quarantineFactor * hospitalFactor); add += Math.floor(Math.random()*2); add = Math.min(add, susceptible); if(r.insurgents > 0) add += Math.floor(r.insurgents * 0.02); newInfections.push(add); });
+  game.regions.forEach((r,i)=>{ const add = newInfections[i]; r.infected += add; const recoverRate = 0.055 + 0.02 * r.buildings.hospital + (game._testing? 0.02:0); const deathRate = 0.007 + 0.0035 * Math.max(0, 2 - r.buildings.hospital) - (game._ventEffective? 0.0035:0); const recover = Math.floor(r.infected * recoverRate); const death = Math.floor(r.infected * deathRate);
+    r.infected = Math.max(0, r.infected - recover - death); r.dead += death; if(r.dead > 0) r.trust -= Math.min(2.2, death / Math.max(1,r.population) * 100); if(r.quarantine) r.trust -= 0.18; if(r.units.police > 0){ r.trust = Math.min(100, r.trust + POLICE_TRUST_PER_UNIT * r.units.police); }
+    const insurgencyChance = Math.max(0.02, 0.12 - (r.units.police * 0.01)); if(r.insurgents<=0 && r.trust < 35 && Math.random() < insurgencyChance){ r.insurgents = 5 + Math.floor(Math.random()*25); r.production = Math.max(0, r.production - Math.floor(r.production * 0.30)); logCat('event',`${r.name} bölgesinde isyan çıktı! (${r.insurgents})`); }
+    const unitCount = (r.units.army + r.units.police + r.units.spec); if(unitCount > 0 && r.insurgents > 0){ const suppressionStrength = (r.units.army*1.0) + (r.units.police*0.6) + (r.units.spec*SPEC_SUPPRESSION_MULT); const suppressed = Math.min(r.insurgents, Math.ceil(suppressionStrength * 0.4)); r.insurgents = Math.max(0, r.insurgents - suppressed); logCat('combat',`${r.name} bölgesinde birlikler isyanı bastırıyor: ${suppressed} etkisiz`); }
+    if(r.infected > 0 && (r.units.army + r.units.police + r.units.spec) > 0){ if(Math.random() < 0.07){ const types = ['army','police','spec']; const t = types[Math.floor(Math.random()*types.length)]; if(r.units[t]>0){ r.units[t] -=1; logCat('event',`${r.name} bölgesinde birlikler enfekte oldu: 1 ${UNIT_TYPES[t].name} kaybedildi`); } } }
+    if(r.dead >= r.population * 0.9){ r.deadZone = true; r.population = 0; r.production = 0; r.units = {army:0,police:0,spec:0}; logCat('event',`${r.name} bölgesi Ölü Bölgeye dönüştü.`); }
+  });
+  maybeSpawnBlackMarket(); if(Math.random() < 0.03) triggerVentilatorDilemma(); renderMap(); renderResources(); if(checkEndConditions()) return; }
+
+function getNeighbors(index){ const row = Math.floor(index / config.COLS); const col = index % config.COLS; const arr = []; for(let dr=-1; dr<=1; dr++) for(let dc=-1; dc<=1; dc++){ if(dr===0 && dc===0) continue; const nr = row+dr, nc=col+dc; if(nr>=0 && nr<config.ROWS && nc>=0 && nc<config.COLS) arr.push(nr*config.COLS+nc); } return arr; }
+function distanceBetween(a,b){ const ar = Math.floor(a / config.COLS), ac = a % config.COLS; const br = Math.floor(b / config.COLS), bc = b % config.COLS; return Math.hypot(ar-br, ac-bc); }
+
+// controls
+function start(){ if(game.running) return; game.running=true; tickTimer = setInterval(tick, Math.max(1000, Math.floor(config.BASE_TICK_MS / game.speed))); logCat('event','Simülasyon başlatıldı'); }
+function pause(){ if(!game.running) return; game.running=false; clearInterval(tickTimer); tickTimer=null; logCat('event','Simülasyon durduruldu'); }
+
+// initial seed: DO NOT place cases in prep phase
+function seedInitial(){ logCat('event','Hazırlık başladı — vaka yok. Altyapı oluşturulabilir.'); }
+seedInitial(); renderMap(); renderTechTree();
+
+</script>
+</body>
+</html>
